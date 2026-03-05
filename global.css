@@ -1,0 +1,92 @@
+// src/ai/flows/recommend-rehab-plan.ts
+'use server';
+
+/**
+ * @fileOverview Recommends a rehabilitation plan based on user health data and needs.
+ *
+ * - recommendRehabPlan - A function that recommends a rehab plan.
+ * - RecommendRehabPlanInput - The input type for the recommendRehabPlan function.
+ * - RecommendRehabPlanOutput - The return type for the recommendRehabPlan function.
+ */
+
+import { generateResponse } from '../ai-instance';
+import { defaultPlans } from '../default-plans';
+
+interface Recommendation {
+  recommendedPlan: string;
+  reason: string;
+  isDefault: boolean;
+}
+
+export async function recommendRehabPlan({ healthData, needs }: { healthData: string; needs: string }): Promise<Recommendation> {
+  try {
+    // 验证输入数据
+    if (!healthData || !needs) {
+      throw new Error('缺少必要的健康数据或康复需求');
+    }
+
+    const prompt = `
+      你是一名专业的康复治疗师。基于以下用户健康数据，请推荐一个合适的康复计划：
+
+      健康数据：
+      ${healthData}
+
+      康复需求：
+      ${needs}
+
+      请提供：
+      1. 具体的康复计划建议
+      2. 推荐该计划的原因
+
+      请用以下格式返回：
+      康复计划：[具体的康复计划]
+      原因：[推荐原因]
+    `;
+
+    const response = await generateResponse(prompt);
+
+    if (!response) {
+      throw new Error('AI 服务未返回有效响应');
+    }
+
+    // 解析响应文本
+    const planMatch = response.match(/康复计划：([\s\S]*?)(?=原因：|$)/);
+    const reasonMatch = response.match(/原因：([\s\S]*?)$/);
+
+    if (!planMatch || !reasonMatch) {
+      console.error('AI 响应格式不正确:', response);
+      throw new Error('AI 响应格式不符合预期，请重试');
+    }
+
+    const recommendedPlan = planMatch[1].trim();
+    const reason = reasonMatch[1].trim();
+
+    if (!recommendedPlan || !reason) {
+      throw new Error('AI 返回的计划或原因为空');
+    }
+
+    return {
+      recommendedPlan,
+      reason,
+      isDefault: false,
+    };
+  } catch (error) {
+    console.error('生成康复计划时出错，使用默认方案：', error);
+    
+    // 从康复需求中提取关键词，用于匹配默认方案
+    const needKey = needs.toLowerCase().includes('疼痛') ? 'pain-relief' :
+                   needs.toLowerCase().includes('活动') ? 'mobility' :
+                   needs.toLowerCase().includes('力量') ? 'strength' :
+                   needs.toLowerCase().includes('平衡') ? 'balance' :
+                   needs.toLowerCase().includes('柔韧') ? 'flexibility' :
+                   'pain-relief'; // 默认使用疼痛缓解方案
+
+    const defaultPlan = defaultPlans[needKey];
+    
+    return {
+      recommendedPlan: defaultPlan.plan,
+      reason: defaultPlan.reason,
+      isDefault: true,
+    };
+  }
+}
